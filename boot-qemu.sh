@@ -38,6 +38,14 @@ function parse_parameters() {
                 set -x
                 ;;
 
+            --debian)
+                DEBIAN=true
+                ;;
+
+            --first-boot)
+                FIRST_BOOT=true
+                ;;
+
             -g | --gdb)
                 GDB=true
                 INTERACTIVE=true
@@ -92,21 +100,20 @@ function decomp_rootfs() {
     [[ ${ARCH} =~ arm32 ]] && ARCH_RTFS_DIR=arm
 
     IMAGES_DIR=${BASE}/images/${ARCH_RTFS_DIR:-${ARCH}}
-    ROOTFS=${IMAGES_DIR}/rootfs.cpio
+    if ${DEBIAN:=false}; then
+        ROOTFS=${IMAGES_DIR}/debian.img
+        [[ -f ${ROOTFS} ]] || die "Run 'sudo images/debootstrap.sh ${IMAGES_DIR##*/}' to get debian.img"
+    else
+        ROOTFS=${IMAGES_DIR}/rootfs.cpio
 
-    rm -rf "${ROOTFS}"
-    zstd -d "${ROOTFS}".zst -o "${ROOTFS}"
+        rm -rf "${ROOTFS}"
+        zstd -d "${ROOTFS}".zst -o "${ROOTFS}"
+    fi
 }
 
 # Boot QEMU
 function setup_qemu_args() {
     APPEND_STRING=""
-    if ${INTERACTIVE:=false}; then
-        APPEND_STRING+="rdinit=/bin/sh "
-    fi
-    if ${GDB:=false}; then
-        APPEND_STRING+="nokaslr "
-    fi
 
     case ${ARCH} in
         arm32_v5)
@@ -139,6 +146,7 @@ function setup_qemu_args() {
         arm64)
             KIMAGE=Image.gz
             APPEND_STRING+="console=ttyAMA0 "
+            ROOT_PREFIX=v
             if [[ "$(uname -m)" = "aarch64" && -e /dev/kvm ]]; then
                 ARM64_CPU=host
                 ARM64_KVM_FLAGS=(-enable-kvm)
@@ -206,6 +214,7 @@ function setup_qemu_args() {
         x86 | x86_64)
             KIMAGE=bzImage
             APPEND_STRING+="console=ttyS0 "
+            ROOT_PREFIX=s
             # Use KVM if the processor supports it and the KVM module is loaded (i.e. /dev/kvm exists)
             [[ $(grep -c -E 'vmx|svm' /proc/cpuinfo) -gt 0 && -e /dev/kvm ]] &&
                 QEMU_ARCH_ARGS=("${QEMU_ARCH_ARGS[@]}" -cpu host -d "unimp,guest_errors" -enable-kvm -smp "$(nproc)")
@@ -215,6 +224,19 @@ function setup_qemu_args() {
             esac
             ;;
     esac
+
+    if ${INTERACTIVE:=false}; then
+        if ${DEBIAN}; then
+            APPEND_STRING+="root=/dev/${ROOT_PREFIX}da "
+            ${FIRST_BOOT:=false} && APPEND_STRING+="single init=/bin/sh "
+        else
+            APPEND_STRING+="rdinit=/bin/sh "
+        fi
+    fi
+    if ${GDB:=false}; then
+        APPEND_STRING+="nokaslr "
+    fi
+
     checkbin "${QEMU[*]}"
 
     [[ ${KIMAGE:=zImage} == "vmlinux" ]] || BOOT_DIR=arch/${ARCH}/boot/
@@ -225,6 +247,11 @@ function setup_qemu_args() {
 # Invoke QEMU
 function invoke_qemu() {
     [[ -z ${QEMU_RAM} ]] && QEMU_RAM=512m
+    if ${DEBIAN}; then
+        QEMU+=(-drive "file=${ROOTFS},index=0,media=disk,format=raw")
+    else
+        QEMU+=(-initrd "${ROOTFS}")
+    fi
     if ${GDB:=false}; then
         while true; do
             if lsof -i:1234 &>/dev/null; then
@@ -237,7 +264,6 @@ function invoke_qemu() {
                 "${QEMU_ARCH_ARGS[@]}" \
                 -append "${APPEND_STRING}" \
                 -display none \
-                -initrd "${ROOTFS}" \
                 -kernel "${KERNEL}" \
                 -m "${QEMU_RAM}" \
                 -nodefaults \
@@ -265,7 +291,6 @@ function invoke_qemu() {
         "${QEMU_ARCH_ARGS[@]}" \
         -append "${APPEND_STRING}" \
         -display none \
-        -initrd "${ROOTFS}" \
         -kernel "${KERNEL}" \
         -m "${QEMU_RAM}" \
         -nodefaults \

@@ -15,13 +15,17 @@ function is_available() {
 function initial_setup() {
     [[ ${EUID} -eq 0 ]] || die "Script should be run as root!"
     [[ ${#} -eq 0 ]] || die "Architecture needs to be provided as an argument to the script!"
-    is_available debootstrap
+    is_available qemu-debootstrap
     is_available qemu-img
 }
 
 function get_architecture() {
     while ((${#})); do
         case ${1} in
+            arm64)
+                DEB_ARCH=${1}
+                OUR_ARCH=${DEB_ARCH}
+                ;;
             x86_64)
                 DEB_ARCH=amd64
                 OUR_ARCH=${1}
@@ -44,7 +48,7 @@ function create_img() {
 
     mkdir -p "${MOUNT_DIR}"
     mount -o loop "${IMG}" "${MOUNT_DIR}"
-    debootstrap --arch "${DEB_ARCH}" buster "${MOUNT_DIR}"
+    qemu-debootstrap --arch "${DEB_ARCH}" --include=stress-ng buster "${MOUNT_DIR}"
     umount "${MOUNT_DIR}"
 
     chown -R "${ORIG_USER}:${ORIG_USER}" "${IMG}"
