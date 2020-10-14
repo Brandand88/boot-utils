@@ -48,7 +48,7 @@ function create_img() {
 
     mkdir -p "${MOUNT_DIR}"
     mount -o loop "${IMG}" "${MOUNT_DIR}"
-    qemu-debootstrap --arch "${DEB_ARCH}" --include=stress-ng buster "${MOUNT_DIR}"
+    qemu-debootstrap --arch "${DEB_ARCH}" --include=build-essential,openssh-server,stress-ng buster "${MOUNT_DIR}"
     umount "${MOUNT_DIR}"
 
     chown -R "${ORIG_USER}:${ORIG_USER}" "${IMG}"

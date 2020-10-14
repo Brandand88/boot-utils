@@ -267,6 +267,7 @@ function invoke_qemu() {
                 -kernel "${KERNEL}" \
                 -m "${QEMU_RAM}" \
                 -nodefaults \
+                -redir tcp:2222::22 \
                 -s -S &
             QEMU_PID=$!
             green "Starting GDB..."
@@ -293,6 +294,8 @@ function invoke_qemu() {
         -display none \
         -kernel "${KERNEL}" \
         -m "${QEMU_RAM}" \
+        -netdev user,id=ssh,hostfwd=tcp::2222-:22 \
+        -device virtio-net-pci,netdev=ssh \
         -nodefaults \
         -serial mon:stdio
     RET=${?}
