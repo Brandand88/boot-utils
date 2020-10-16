@@ -149,12 +149,18 @@ function setup_qemu_args() {
             ROOT_PREFIX=v
             if [[ "$(uname -m)" = "aarch64" && -e /dev/kvm ]]; then
                 ARM64_CPU=host
-                ARM64_KVM_FLAGS=(-enable-kvm)
+                ARM64_QEMU_FLAGS=(-enable-kvm -machine virt)
+            else
+                ARM64_QEMU_FLAGS=( -M virt
+                -machine virtualization=true
+                -machine virt,gic-version=3)
             fi
             QEMU_ARCH_ARGS=(
-                "${ARM64_KVM_FLAGS[@]}"
-                -cpu "${ARM64_CPU:-max}"
-                -machine virt)
+                -cpu "${ARM64_CPU:-max,sve=off}"
+                "${ARM64_QEMU_FLAGS[@]}"
+                -smp "$(($(nproc) / 4))"
+            )
+            ${DEBIAN} && QEMU_RAM=16G
             QEMU=(qemu-system-aarch64)
             ;;
 
